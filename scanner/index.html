@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>FaB Webcam Card Scanner</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/daisyui@5/dist/full.min.css">
+  <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  <link rel="stylesheet" href="./styles.css" />
+  <script src="./catalog.js"></script>
+</head>
+<body>
+<div class="app">
+  <section class="card bg-base-200"><div class="card-body p-4">
+    <div class="grid2">
+      <label class="field"><span>Session location</span><input id="location" class="input input-bordered w-full" placeholder="Example: Binder 3 / Box A" /></label>
+      <label class="field"><span>Inventory per scan</span><input id="defaultQty" type="number" min="1" step="1" value="1" class="input input-bordered w-full" /></label>
+    </div>
+    <div class="toolbar">
+      <button id="cameraBtn" class="btn btn-primary">Start camera</button>
+      <button id="scanBtn" class="btn btn-secondary" disabled>Scan card</button>
+      <label class="label cursor-pointer gap-2"><input id="autoNext" type="checkbox" class="toggle toggle-primary" checked><span class="label-text">Auto-read next card</span></label>
+      <label class="field"><span>Manual card number</span><div class="join"><input id="manual" class="input input-bordered join-item w-full uppercase" placeholder="WTR001" /><button id="manualBtn" class="btn join-item">Look up</button></div></label>
+    </div>
+  </div></section>
+
+  <section class="camera-wrap">
+    <video id="video" autoplay playsinline muted></video>
+    <canvas id="canvas" hidden></canvas>
+    <div class="guide"></div><div id="scanline" class="scanline" hidden></div>
+    <div class="status"><span id="cameraStatus" class="badge badge-neutral">Camera off</span><span id="ocrStatus" class="badge badge-neutral">Ready</span></div>
+  </section>
+
+  <section class="stats">
+    <div class="stat bg-base-200 rounded-box p-3"><div class="stat-title">Session rows</div><div id="rowCount" class="stat-value text-2xl">0</div></div>
+    <div class="stat bg-base-200 rounded-box p-3"><div class="stat-title">Inventory total</div><div id="qtyCount" class="stat-value text-2xl">0</div></div>
+    <div class="actions ml-auto"><button id="undoBtn" class="btn btn-ghost" disabled>Undo last</button><button id="clearBtn" class="btn btn-ghost" disabled>Clear</button><button id="exportBtn" class="btn btn-success" disabled>Export Excel</button></div>
+  </section>
+
+  <section class="card bg-base-200"><div class="card-body p-3">
+    <div class="flex justify-between items-center"><h2 class="card-title text-base">Current session</h2><span class="text-sm muted">One row per confirmed scan</span></div>
+    <div class="table-wrap"><table class="table table-zebra table-sm"><thead><tr><th>#</th><th>Card Number</th><th>Set</th><th>Edition</th><th>Print Type</th><th>Card Name</th><th>Color</th><th>Rarity</th><th>Artist</th><th>Inventory</th><th>Location</th><th></th></tr></thead><tbody id="rows"><tr><td colspan="12" class="empty">Your scanned cards will appear here.</td></tr></tbody></table></div>
+  </div></section>
+</div>
+
+<div id="verifyModal" class="modal">
+  <div class="modal-box">
+    <div class="flex justify-between gap-3"><div><h3 class="font-bold text-lg">Verify scanned card</h3><p class="text-sm muted">Confirm the catalog variant before adding it.</p></div><button id="closeModal" class="btn btn-sm btn-circle btn-ghost">✕</button></div>
+    <div id="matchSummary" class="match-card bg-base-300 mt-3"></div>
+    <div class="mt-4"><div class="font-semibold mb-2">1. Color</div><div id="colorChoices" class="choice-grid"></div></div>
+    <div id="editionSection" class="mt-4" hidden><div class="font-semibold mb-2">2. Edition</div><div id="editionChoices" class="choice-grid"></div></div>
+    <div id="printSection" class="mt-4" hidden><div class="font-semibold mb-2">3. Print type</div><div id="printChoices" class="choice-grid"></div></div>
+    <div id="finalSection" class="mt-4" hidden>
+      <div id="finalDetails" class="alert"></div>
+      <div class="grid2 mt-3"><label class="field"><span>Inventory</span><input id="cardQty" type="number" min="1" step="1" class="input input-bordered" /></label><label class="field"><span>Location</span><input id="cardLocation" class="input input-bordered" /></label></div>
+    </div>
+    <div class="modal-action"><button id="cancelBtn" class="btn">Cancel</button><button id="addBtn" class="btn btn-primary" disabled>Add & scan next</button></div>
+  </div>
+</div>
+
+<div id="notFoundModal" class="modal"><div class="modal-box"><h3 class="font-bold text-lg">Card number not recognized</h3><p id="notFoundText" class="py-3"></p><label class="field"><span>Correct or enter the card number</span><input id="correction" class="input input-bordered uppercase" /></label><div class="modal-action"><button id="notFoundCancel" class="btn">Cancel</button><button id="correctionBtn" class="btn btn-primary">Look up</button></div></div></div>
+
+<script>
+const catalog=window.FAB_CATALOG||{};
+const $=id=>document.getElementById(id);
+let stream=null, worker=null, busy=false, activeVariants=[], selectedColor='', selectedEdition='', selectedPrint='', session=[];
+const COLS=['Card Number','Set','Edition','Print Type','Card Name','Color','Rarity','Artist','Inventory','Location'];
+const idx={number:0,set:1,edition:2,print:3,name:4,color:5,rarity:6,artist:7};
+function norm(v){return String(v||'').toUpperCase().replace(/[^A-Z0-9]/g,'')}
+function uniqCI(values){const m=new Map(); values.filter(Boolean).forEach(v=>{const k=v.toLowerCase();if(!m.has(k)||m.get(k)===v.toLowerCase())m.set(k,v)});return [...m.values()]}
+function setStatus(text,kind='neutral'){ $('ocrStatus').className='badge badge-'+kind; $('ocrStatus').textContent=text }
+function escapeHtml(s){return String(s??'').replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]))}
+async function startCamera(){
+ try{
+  if(stream){stream.getTracks().forEach(t=>t.stop());stream=null;$('cameraBtn').textContent='Start camera';$('scanBtn').disabled=true;$('cameraStatus').textContent='Camera off';return}
+  stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'environment'},width:{ideal:1920},height:{ideal:1080}},audio:false});
+  $('video').srcObject=stream;$('cameraBtn').textContent='Stop camera';$('scanBtn').disabled=false;$('cameraStatus').className='badge badge-success';$('cameraStatus').textContent='Camera ready';setStatus('Aim card, then scan','info');
+ }catch(e){console.warn('Camera could not start:',e);const denied=e&&(['NotAllowedError','PermissionDeniedError'].includes(e.name));setStatus(denied?'Allow camera access, then retry':'Camera unavailable—manual lookup still works','error');$('cameraStatus').className='badge badge-error';$('cameraStatus').textContent=denied?'Permission needed':'Camera unavailable';$('cameraBtn').textContent='Retry camera';stream=null}
+}
+async function scan(){
+ if(busy||!stream)return;busy=true;$('scanBtn').disabled=true;$('scanline').hidden=false;setStatus('Reading card number…','warning');
+ try{
+  const v=$('video'),c=$('canvas'),ctx=c.getContext('2d');c.width=v.videoWidth||1280;c.height=v.videoHeight||720;ctx.drawImage(v,0,0,c.width,c.height);
+  // Focus OCR on the lower third, where FaB collector numbers normally appear.
+  const crop=document.createElement('canvas'),ch=Math.floor(c.height*.38);crop.width=c.width;crop.height=ch;const x=crop.getContext('2d');x.drawImage(c,0,c.height-ch,c.width,ch,0,0,c.width,ch);
+  const image=x.getImageData(0,0,crop.width,crop.height);for(let i=0;i<image.data.length;i+=4){let g=.299*image.data[i]+.587*image.data[i+1]+.114*image.data[i+2];g=g>145?255:0;image.data[i]=image.data[i+1]=image.data[i+2]=g}x.putImageData(image,0,0);
+  if(!worker){setStatus('Loading card reader…','warning');worker=await Tesseract.createWorker('eng',1,{logger:m=>{if(m.status==='recognizing text')setStatus('Reading '+Math.round((m.progress||0)*100)+'%','warning')}});await worker.setParameters({tessedit_char_whitelist:'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789- ',preserve_interword_spaces:'1'});}
+  const result=await worker.recognize(crop); const text=result.data.text||''; const match=findNumber(text);
+  if(match){setStatus('Found '+match,'success');openVerify(match)}else{setStatus('Number unclear','error');openNotFound(text)}
+ }catch(e){console.warn('Card scan failed:',e);setStatus('Scan failed—retry or use manual entry','error')}finally{busy=false;$('scanBtn').disabled=!stream;$('scanline').hidden=true}
+}
+function findNumber(text){
+ const compact=norm(text);let exact=Object.keys(catalog).filter(k=>compact.includes(k));if(exact.length)return exact.sort((a,b)=>b.length-a.length)[0];
+ const tokens=String(text).toUpperCase().split(/\s+/).map(norm).filter(t=>t.length>=5&&t.length<=12);
+ for(const t of tokens)if(catalog[t])return t;
+ return '';
+}
+function lookup(raw){const n=norm(raw);if(catalog[n]){openVerify(n);return true}openNotFound(raw);return false}
+function openNotFound(raw){$('notFoundText').textContent=raw?`The reader saw “${raw.trim().replace(/\s+/g,' ')}”, but it did not produce an exact catalog number.`:'No exact catalog number was found.';$('correction').value='';$('notFoundModal').classList.add('modal-open');setTimeout(()=>$('correction').focus(),80)}
+function openVerify(number){
+ activeVariants=catalog[number]; selectedColor=selectedEdition=selectedPrint='';
+ const first=activeVariants[0], names=uniqCI(activeVariants.map(v=>v[idx.name])),sets=uniqCI(activeVariants.map(v=>v[idx.set]));
+ $('matchSummary').innerHTML=`<div class="big-number">${escapeHtml(first[idx.number])}</div><div class="font-semibold">${escapeHtml(names.join(' / '))}</div><div><span class="badge badge-primary">${escapeHtml(sets.join(' / '))}</span></div>`;
+ renderColors();$('editionSection').hidden=true;$('printSection').hidden=true;$('finalSection').hidden=true;$('addBtn').disabled=true;$('cardQty').value=Math.max(1,parseInt($('defaultQty').value)||1);$('cardLocation').value=$('location').value;$('verifyModal').classList.add('modal-open');
+}
+function choiceButton(label,active,disabled,onClick){const b=document.createElement('button');b.className='btn choice '+(active?'btn-primary active':'btn-outline');b.textContent=label;b.disabled=disabled;b.onclick=onClick;return b}
+function renderColors(){const host=$('colorChoices');host.innerHTML='';const available=uniqCI(activeVariants.map(v=>v[idx.color]));['Red','Yellow','Blue','Purple','No Color',...available].filter((v,i,a)=>a.findIndex(x=>x.toLowerCase()===v.toLowerCase())===i).forEach(color=>{const actual=available.find(x=>x.toLowerCase()===color.toLowerCase());host.append(choiceButton(color,selectedColor===actual,!actual,()=>{selectedColor=actual;selectedEdition=selectedPrint='';renderColors();renderEditions()}))})}
+function renderEditions(){const list=activeVariants.filter(v=>v[idx.color].toLowerCase()===selectedColor.toLowerCase()),editions=uniqCI(list.map(v=>v[idx.edition]));$('editionSection').hidden=false;const host=$('editionChoices');host.innerHTML='';editions.forEach(ed=>host.append(choiceButton(ed,selectedEdition===ed,false,()=>{selectedEdition=ed;selectedPrint='';renderEditions();renderPrints()})));if(editions.length===1&&!selectedEdition){selectedEdition=editions[0];renderEditions();renderPrints()}}
+function renderPrints(){const list=activeVariants.filter(v=>v[idx.color].toLowerCase()===selectedColor.toLowerCase()&&v[idx.edition].toLowerCase()===selectedEdition.toLowerCase()),prints=uniqCI(list.map(v=>v[idx.print]||'Unspecified'));$('printSection').hidden=false;const host=$('printChoices');host.innerHTML='';prints.forEach(pt=>host.append(choiceButton(pt,selectedPrint===pt,false,()=>{selectedPrint=pt;renderPrints();renderFinal()})));if(prints.length===1&&!selectedPrint){selectedPrint=prints[0];renderPrints();renderFinal()}}
+function currentCandidates(){return activeVariants.filter(v=>v[idx.color].toLowerCase()===selectedColor.toLowerCase()&&v[idx.edition].toLowerCase()===selectedEdition.toLowerCase()&&(v[idx.print]||'Unspecified').toLowerCase()===selectedPrint.toLowerCase())}
+function renderFinal(){const c=currentCandidates(),r=c[0];if(!r)return;const rarities=uniqCI(c.map(v=>v[idx.rarity])),artists=uniqCI(c.map(v=>v[idx.artist]));$('finalSection').hidden=false;$('finalDetails').innerHTML=`<div><b>${escapeHtml(r[idx.name])}</b><br><span class="text-sm">Rarity: ${escapeHtml(rarities.join(' / ')||'blank')} · Artist: ${escapeHtml(artists.join(' / ')||'blank')}</span></div>`;$('addBtn').disabled=false}
+function addCard(){const c=currentCandidates(),r=c[0];if(!r)return;const rarities=uniqCI(c.map(v=>v[idx.rarity])),artists=uniqCI(c.map(v=>v[idx.artist]));session.push({'Card Number':r[idx.number],'Set':r[idx.set],'Edition':r[idx.edition],'Print Type':r[idx.print],'Card Name':r[idx.name],'Color':r[idx.color],'Rarity':rarities.join(' / '),'Artist':artists.join(' / '),'Inventory':Math.max(1,parseInt($('cardQty').value)||1),'Location':$('cardLocation').value});closeVerify();renderRows();if(stream&&$('autoNext').checked){setStatus('Added—replace card now','success');setTimeout(()=>{if(stream&&!busy&&!$('verifyModal').classList.contains('modal-open')&&!$('notFoundModal').classList.contains('modal-open'))scan()},2200)}else setStatus('Added—ready for next card','success')}
+function closeVerify(){$('verifyModal').classList.remove('modal-open')}
+function renderRows(){const host=$('rows');if(!session.length)host.innerHTML='<tr><td colspan="12" class="empty">Your scanned cards will appear here.</td></tr>';else host.innerHTML=session.map((r,i)=>`<tr><td>${i+1}</td>${COLS.map(c=>`<td>${escapeHtml(r[c])}</td>`).join('')}<td><button class="btn btn-ghost btn-xs" onclick="removeRow(${i})">Remove</button></td></tr>`).join('');$('rowCount').textContent=session.length;$('qtyCount').textContent=session.reduce((a,r)=>a+Number(r.Inventory||0),0);['undoBtn','clearBtn','exportBtn'].forEach(id=>$(id).disabled=!session.length)}
+window.removeRow=i=>{session.splice(i,1);renderRows()};
+function exportExcel(){if(!session.length)return;const data=session.map(r=>{const o={};COLS.forEach(c=>o[c]=r[c]);return o});const ws=XLSX.utils.json_to_sheet(data,{header:COLS});ws['!cols']=[16,22,18,23,34,12,12,28,11,24].map(w=>({wch:w}));const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,'Main data imported');const stamp=new Date().toISOString().slice(0,19).replace(/[T:]/g,'-');XLSX.writeFile(wb,`FaB-inventory-session-${stamp}.xlsx`)}
+$('cameraBtn').onclick=startCamera;$('scanBtn').onclick=scan;$('manualBtn').onclick=()=>lookup($('manual').value);$('manual').onkeydown=e=>{if(e.key==='Enter')lookup(e.target.value)};$('closeModal').onclick=$('cancelBtn').onclick=closeVerify;$('addBtn').onclick=addCard;$('notFoundCancel').onclick=()=>$('notFoundModal').classList.remove('modal-open');$('correctionBtn').onclick=()=>{const v=$('correction').value;$('notFoundModal').classList.remove('modal-open');lookup(v)};$('correction').onkeydown=e=>{if(e.key==='Enter')$('correctionBtn').click()};$('undoBtn').onclick=()=>{session.pop();renderRows()};$('clearBtn').onclick=()=>{session=[];renderRows()};$('exportBtn').onclick=exportExcel;
+</script>
+</body></html>
