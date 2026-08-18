@@ -4,8 +4,6 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>FaB Webcam Card Scanner</title>
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/daisyui@5/dist/full.min.css">
-  <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
   <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
   <link rel="stylesheet" href="./styles.css" />
@@ -83,10 +81,9 @@ async function scan(){
  if(busy||!stream)return;busy=true;$('scanBtn').disabled=true;$('scanline').hidden=false;setStatus('Reading card number…','warning');
  try{
   const v=$('video'),c=$('canvas'),ctx=c.getContext('2d');c.width=v.videoWidth||1280;c.height=v.videoHeight||720;ctx.drawImage(v,0,0,c.width,c.height);
-  // Focus OCR on the lower third, where FaB collector numbers normally appear.
-  const crop=document.createElement('canvas'),ch=Math.floor(c.height*.38);crop.width=c.width;crop.height=ch;const x=crop.getContext('2d');x.drawImage(c,0,c.height-ch,c.width,ch,0,0,c.width,ch);
-  const image=x.getImageData(0,0,crop.width,crop.height);for(let i=0;i<image.data.length;i+=4){let g=.299*image.data[i]+.587*image.data[i+1]+.114*image.data[i+2];g=g>145?255:0;image.data[i]=image.data[i+1]=image.data[i+2]=g}x.putImageData(image,0,0);
-  if(!worker){setStatus('Loading card reader…','warning');worker=await Tesseract.createWorker('eng',1,{logger:m=>{if(m.status==='recognizing text')setStatus('Reading '+Math.round((m.progress||0)*100)+'%','warning')}});await worker.setParameters({tessedit_char_whitelist:'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789- ',preserve_interword_spaces:'1'});}
+  // Read only the small lower-left collector-number strip. A broad crop also sees rules text.
+  const crop=document.createElement('canvas'),sx=Math.floor(c.width*.06),sy=Math.floor(c.height*.80),sw=Math.floor(c.width*.68),sh=Math.floor(c.height*.16);crop.width=sw*2;crop.height=sh*2;const x=crop.getContext('2d');x.filter='grayscale(1) contrast(2)';x.drawImage(c,sx,sy,sw,sh,0,0,crop.width,crop.height);
+  if(!worker){setStatus('Loading card reader…','warning');worker=await Tesseract.createWorker('eng',1,{logger:m=>{if(m.status==='recognizing text')setStatus('Reading '+Math.round((m.progress||0)*100)+'%','warning')}});await worker.setParameters({tessedit_char_whitelist:'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789- ',tessedit_pageseg_mode:'7',preserve_interword_spaces:'1'});}
   const result=await worker.recognize(crop); const text=result.data.text||''; const match=findNumber(text);
   if(match){setStatus('Found '+match,'success');openVerify(match)}else{setStatus('Number unclear','error');openNotFound(text)}
  }catch(e){console.warn('Card scan failed:',e);setStatus('Scan failed—retry or use manual entry','error')}finally{busy=false;$('scanBtn').disabled=!stream;$('scanline').hidden=true}
