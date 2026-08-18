@@ -18,8 +18,8 @@
     </div>
     <div class="toolbar">
       <button id="cameraBtn" class="btn btn-primary">Start camera</button>
-      <button id="scanBtn" class="btn btn-secondary" disabled>Scan card</button>
-      <label class="label cursor-pointer gap-2"><input id="autoNext" type="checkbox" class="toggle toggle-primary" checked><span class="label-text">Auto-read next card</span></label>
+      <button id="scanBtn" class="btn btn-secondary" disabled>Scan now</button>
+      <label class="label cursor-pointer gap-2"><input id="autoNext" type="checkbox" class="toggle toggle-primary" checked><span class="label-text">Keep reading until found</span></label>
       <label class="field"><span>Manual card number</span><div class="join"><input id="manual" class="input input-bordered join-item w-full uppercase" placeholder="WTR001" /><button id="manualBtn" class="btn join-item">Look up</button></div></label>
     </div>
   </div></section>
@@ -63,30 +63,31 @@
 <script>
 const catalog=window.FAB_CATALOG||{};
 const $=id=>document.getElementById(id);
-let stream=null, worker=null, busy=false, activeVariants=[], selectedColor='', selectedEdition='', selectedPrint='', session=[];
+let stream=null, worker=null, busy=false, retryTimer=null, activeVariants=[], selectedColor='', selectedEdition='', selectedPrint='', session=[];
 const COLS=['Card Number','Set','Edition','Print Type','Card Name','Color','Rarity','Artist','Inventory','Location'];
 const idx={number:0,set:1,edition:2,print:3,name:4,color:5,rarity:6,artist:7};
 function norm(v){return String(v||'').toUpperCase().replace(/[^A-Z0-9]/g,'')}
 function uniqCI(values){const m=new Map(); values.filter(Boolean).forEach(v=>{const k=v.toLowerCase();if(!m.has(k)||m.get(k)===v.toLowerCase())m.set(k,v)});return [...m.values()]}
 function setStatus(text,kind='neutral'){ $('ocrStatus').className='badge badge-'+kind; $('ocrStatus').textContent=text }
 function escapeHtml(s){return String(s??'').replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]))}
+function scheduleScan(delay=650){clearTimeout(retryTimer);retryTimer=setTimeout(()=>{if(stream&&!busy&&$('autoNext').checked&&!$('verifyModal').classList.contains('modal-open')&&!$('notFoundModal').classList.contains('modal-open'))scan(true)},delay)}
 async function startCamera(){
  try{
-  if(stream){stream.getTracks().forEach(t=>t.stop());stream=null;$('cameraBtn').textContent='Start camera';$('scanBtn').disabled=true;$('cameraStatus').textContent='Camera off';return}
+  if(stream){clearTimeout(retryTimer);stream.getTracks().forEach(t=>t.stop());stream=null;$('cameraBtn').textContent='Start camera';$('scanBtn').disabled=true;$('cameraStatus').textContent='Camera off';setStatus('Stopped','neutral');return}
   stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'environment'},width:{ideal:1920},height:{ideal:1080}},audio:false});
-  $('video').srcObject=stream;$('cameraBtn').textContent='Stop camera';$('scanBtn').disabled=false;$('cameraStatus').className='badge badge-success';$('cameraStatus').textContent='Camera ready';setStatus('Aim card, then scan','info');
+  $('video').srcObject=stream;$('cameraBtn').textContent='Stop camera';$('scanBtn').disabled=false;$('cameraStatus').className='badge badge-success';$('cameraStatus').textContent='Camera ready';setStatus('Hold card steady—reader starting','info');scheduleScan(900);
  }catch(e){console.warn('Camera could not start:',e);const denied=e&&(['NotAllowedError','PermissionDeniedError'].includes(e.name));setStatus(denied?'Allow camera access, then retry':'Camera unavailable—manual lookup still works','error');$('cameraStatus').className='badge badge-error';$('cameraStatus').textContent=denied?'Permission needed':'Camera unavailable';$('cameraBtn').textContent='Retry camera';stream=null}
 }
-async function scan(){
- if(busy||!stream)return;busy=true;$('scanBtn').disabled=true;$('scanline').hidden=false;setStatus('Reading card number…','warning');
+async function scan(continuous=false){
+ if(busy||!stream)return;busy=true;$('scanBtn').disabled=true;$('scanline').hidden=false;setStatus('Reading card number…','warning');let found=false;
  try{
   const v=$('video'),c=$('canvas'),ctx=c.getContext('2d');c.width=v.videoWidth||1280;c.height=v.videoHeight||720;ctx.drawImage(v,0,0,c.width,c.height);
   // Read only the small lower-left collector-number strip. A broad crop also sees rules text.
   const crop=document.createElement('canvas'),sx=Math.floor(c.width*.06),sy=Math.floor(c.height*.80),sw=Math.floor(c.width*.68),sh=Math.floor(c.height*.16);crop.width=sw*2;crop.height=sh*2;const x=crop.getContext('2d');x.filter='grayscale(1) contrast(2)';x.drawImage(c,sx,sy,sw,sh,0,0,crop.width,crop.height);
   if(!worker){setStatus('Loading card reader…','warning');worker=await Tesseract.createWorker('eng',1,{logger:m=>{if(m.status==='recognizing text')setStatus('Reading '+Math.round((m.progress||0)*100)+'%','warning')}});await worker.setParameters({tessedit_char_whitelist:'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789- ',tessedit_pageseg_mode:'7',preserve_interword_spaces:'1'});}
   const result=await worker.recognize(crop); const text=result.data.text||''; const match=findNumber(text);
-  if(match){setStatus('Found '+match,'success');openVerify(match)}else{setStatus('Number unclear','error');openNotFound(text)}
- }catch(e){console.warn('Card scan failed:',e);setStatus('Scan failed—retry or use manual entry','error')}finally{busy=false;$('scanBtn').disabled=!stream;$('scanline').hidden=true}
+  if(match){found=true;setStatus('Found '+match,'success');openVerify(match)}else if(continuous){setStatus('Not clear yet—hold steady','warning')}else{setStatus('Number unclear','error');openNotFound(text)}
+ }catch(e){console.warn('Card scan failed:',e);setStatus(continuous?'Trying again…':'Scan failed—retry or use manual entry','error')}finally{busy=false;$('scanBtn').disabled=!stream;$('scanline').hidden=true;if(continuous&&!found)scheduleScan(700)}
 }
 function findNumber(text){
  const compact=norm(text);let exact=Object.keys(catalog).filter(k=>compact.includes(k));if(exact.length)return exact.sort((a,b)=>b.length-a.length)[0];
@@ -108,11 +109,11 @@ function renderEditions(){const list=activeVariants.filter(v=>v[idx.color].toLow
 function renderPrints(){const list=activeVariants.filter(v=>v[idx.color].toLowerCase()===selectedColor.toLowerCase()&&v[idx.edition].toLowerCase()===selectedEdition.toLowerCase()),prints=uniqCI(list.map(v=>v[idx.print]||'Unspecified'));$('printSection').hidden=false;const host=$('printChoices');host.innerHTML='';prints.forEach(pt=>host.append(choiceButton(pt,selectedPrint===pt,false,()=>{selectedPrint=pt;renderPrints();renderFinal()})));if(prints.length===1&&!selectedPrint){selectedPrint=prints[0];renderPrints();renderFinal()}}
 function currentCandidates(){return activeVariants.filter(v=>v[idx.color].toLowerCase()===selectedColor.toLowerCase()&&v[idx.edition].toLowerCase()===selectedEdition.toLowerCase()&&(v[idx.print]||'Unspecified').toLowerCase()===selectedPrint.toLowerCase())}
 function renderFinal(){const c=currentCandidates(),r=c[0];if(!r)return;const rarities=uniqCI(c.map(v=>v[idx.rarity])),artists=uniqCI(c.map(v=>v[idx.artist]));$('finalSection').hidden=false;$('finalDetails').innerHTML=`<div><b>${escapeHtml(r[idx.name])}</b><br><span class="text-sm">Rarity: ${escapeHtml(rarities.join(' / ')||'blank')} · Artist: ${escapeHtml(artists.join(' / ')||'blank')}</span></div>`;$('addBtn').disabled=false}
-function addCard(){const c=currentCandidates(),r=c[0];if(!r)return;const rarities=uniqCI(c.map(v=>v[idx.rarity])),artists=uniqCI(c.map(v=>v[idx.artist]));session.push({'Card Number':r[idx.number],'Set':r[idx.set],'Edition':r[idx.edition],'Print Type':r[idx.print],'Card Name':r[idx.name],'Color':r[idx.color],'Rarity':rarities.join(' / '),'Artist':artists.join(' / '),'Inventory':Math.max(1,parseInt($('cardQty').value)||1),'Location':$('cardLocation').value});closeVerify();renderRows();if(stream&&$('autoNext').checked){setStatus('Added—replace card now','success');setTimeout(()=>{if(stream&&!busy&&!$('verifyModal').classList.contains('modal-open')&&!$('notFoundModal').classList.contains('modal-open'))scan()},2200)}else setStatus('Added—ready for next card','success')}
-function closeVerify(){$('verifyModal').classList.remove('modal-open')}
+function addCard(){const c=currentCandidates(),r=c[0];if(!r)return;const rarities=uniqCI(c.map(v=>v[idx.rarity])),artists=uniqCI(c.map(v=>v[idx.artist]));session.push({'Card Number':r[idx.number],'Set':r[idx.set],'Edition':r[idx.edition],'Print Type':r[idx.print],'Card Name':r[idx.name],'Color':r[idx.color],'Rarity':rarities.join(' / '),'Artist':artists.join(' / '),'Inventory':Math.max(1,parseInt($('cardQty').value)||1),'Location':$('cardLocation').value});closeVerify(false);renderRows();if(stream&&$('autoNext').checked){setStatus('Added—replace card now','success');scheduleScan(2200)}else setStatus('Added—ready for next card','success')}
+function closeVerify(resume=true){$('verifyModal').classList.remove('modal-open');if(resume)scheduleScan(500)}
 function renderRows(){const host=$('rows');if(!session.length)host.innerHTML='<tr><td colspan="12" class="empty">Your scanned cards will appear here.</td></tr>';else host.innerHTML=session.map((r,i)=>`<tr><td>${i+1}</td>${COLS.map(c=>`<td>${escapeHtml(r[c])}</td>`).join('')}<td><button class="btn btn-ghost btn-xs" onclick="removeRow(${i})">Remove</button></td></tr>`).join('');$('rowCount').textContent=session.length;$('qtyCount').textContent=session.reduce((a,r)=>a+Number(r.Inventory||0),0);['undoBtn','clearBtn','exportBtn'].forEach(id=>$(id).disabled=!session.length)}
 window.removeRow=i=>{session.splice(i,1);renderRows()};
 function exportExcel(){if(!session.length)return;const data=session.map(r=>{const o={};COLS.forEach(c=>o[c]=r[c]);return o});const ws=XLSX.utils.json_to_sheet(data,{header:COLS});ws['!cols']=[16,22,18,23,34,12,12,28,11,24].map(w=>({wch:w}));const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,'Main data imported');const stamp=new Date().toISOString().slice(0,19).replace(/[T:]/g,'-');XLSX.writeFile(wb,`FaB-inventory-session-${stamp}.xlsx`)}
-$('cameraBtn').onclick=startCamera;$('scanBtn').onclick=scan;$('manualBtn').onclick=()=>lookup($('manual').value);$('manual').onkeydown=e=>{if(e.key==='Enter')lookup(e.target.value)};$('closeModal').onclick=$('cancelBtn').onclick=closeVerify;$('addBtn').onclick=addCard;$('notFoundCancel').onclick=()=>$('notFoundModal').classList.remove('modal-open');$('correctionBtn').onclick=()=>{const v=$('correction').value;$('notFoundModal').classList.remove('modal-open');lookup(v)};$('correction').onkeydown=e=>{if(e.key==='Enter')$('correctionBtn').click()};$('undoBtn').onclick=()=>{session.pop();renderRows()};$('clearBtn').onclick=()=>{session=[];renderRows()};$('exportBtn').onclick=exportExcel;
+$('cameraBtn').onclick=startCamera;$('scanBtn').onclick=()=>scan(false);$('autoNext').onchange=()=>{if($('autoNext').checked)scheduleScan(250);else clearTimeout(retryTimer)};$('manualBtn').onclick=()=>lookup($('manual').value);$('manual').onkeydown=e=>{if(e.key==='Enter')lookup(e.target.value)};$('closeModal').onclick=$('cancelBtn').onclick=closeVerify;$('addBtn').onclick=addCard;$('notFoundCancel').onclick=()=>$('notFoundModal').classList.remove('modal-open');$('correctionBtn').onclick=()=>{const v=$('correction').value;$('notFoundModal').classList.remove('modal-open');lookup(v)};$('correction').onkeydown=e=>{if(e.key==='Enter')$('correctionBtn').click()};$('undoBtn').onclick=()=>{session.pop();renderRows()};$('clearBtn').onclick=()=>{session=[];renderRows()};$('exportBtn').onclick=exportExcel;
 </script>
 </body></html>
