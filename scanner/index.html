@@ -27,7 +27,8 @@
   <section class="camera-wrap">
     <video id="video" autoplay playsinline muted></video>
     <canvas id="canvas" hidden></canvas>
-    <div class="guide"></div><div id="scanline" class="scanline" hidden></div>
+    <div class="number-help">Hold only the printed card number close to the camera</div>
+    <div class="guide"><span>CARD NUMBER ONLY</span><small>Fill this box — example: WTR001</small></div><div id="scanline" class="scanline" hidden></div>
     <div class="status"><span id="cameraStatus" class="badge badge-neutral">Camera off</span><span id="ocrStatus" class="badge badge-neutral">Ready</span></div>
   </section>
 
@@ -82,8 +83,8 @@ async function scan(continuous=false){
  if(busy||!stream)return;busy=true;$('scanBtn').disabled=true;$('scanline').hidden=false;setStatus('Reading card number…','warning');let found=false;
  try{
   const v=$('video'),c=$('canvas'),ctx=c.getContext('2d');c.width=v.videoWidth||1280;c.height=v.videoHeight||720;ctx.drawImage(v,0,0,c.width,c.height);
-  // Read only the small lower-left collector-number strip. A broad crop also sees rules text.
-  const crop=document.createElement('canvas'),sx=Math.floor(c.width*.06),sy=Math.floor(c.height*.80),sw=Math.floor(c.width*.68),sh=Math.floor(c.height*.16);crop.width=sw*2;crop.height=sh*2;const x=crop.getContext('2d');x.filter='grayscale(1) contrast(2)';x.drawImage(c,sx,sy,sw,sh,0,0,crop.width,crop.height);
+  // The user aims a close-up of only the collector number at the wide center target.
+  const crop=document.createElement('canvas'),sx=Math.floor(c.width*.05),sy=Math.floor(c.height*.32),sw=Math.floor(c.width*.90),sh=Math.floor(c.height*.36);crop.width=sw*2;crop.height=sh*2;const x=crop.getContext('2d');x.filter='grayscale(1) contrast(2.4)';x.drawImage(c,sx,sy,sw,sh,0,0,crop.width,crop.height);
   if(!worker){setStatus('Loading card reader…','warning');worker=await Tesseract.createWorker('eng',1,{logger:m=>{if(m.status==='recognizing text')setStatus('Reading '+Math.round((m.progress||0)*100)+'%','warning')}});await worker.setParameters({tessedit_char_whitelist:'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789- ',tessedit_pageseg_mode:'7',preserve_interword_spaces:'1'});}
   const result=await worker.recognize(crop); const text=result.data.text||''; const match=findNumber(text);
   if(match){found=true;setStatus('Found '+match,'success');openVerify(match)}else if(continuous){setStatus('Not clear yet—hold steady','warning')}else{setStatus('Number unclear','error');openNotFound(text)}
