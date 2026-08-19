@@ -28,7 +28,7 @@
     <video id="video" autoplay playsinline muted></video>
     <canvas id="canvas" hidden></canvas>
     <div class="number-help">Hold only the printed card number close to the camera</div>
-    <div class="guide"><span>CARD NUMBER ONLY</span><small>Fill this box — example: WTR001</small></div><div id="scanline" class="scanline" hidden></div>
+    <div class="guide"><span>CARD NUMBER ONLY</span><small>Fill this area — example: GEM069</small></div><div id="scanline" class="scanline" hidden></div>
     <div class="status"><span id="cameraStatus" class="badge badge-neutral">Camera off</span><span id="ocrStatus" class="badge badge-neutral">Ready</span></div>
   </section>
 
@@ -91,9 +91,14 @@ async function scan(continuous=false){
  }catch(e){console.warn('Card scan failed:',e);setStatus(continuous?'Trying again…':'Scan failed—retry or use manual entry','error')}finally{busy=false;$('scanBtn').disabled=!stream;$('scanline').hidden=true;if(continuous&&!found)scheduleScan(700)}
 }
 function findNumber(text){
- const compact=norm(text);let exact=Object.keys(catalog).filter(k=>compact.includes(k));if(exact.length)return exact.sort((a,b)=>b.length-a.length)[0];
- const tokens=String(text).toUpperCase().split(/\s+/).map(norm).filter(t=>t.length>=5&&t.length<=12);
- for(const t of tokens)if(catalog[t])return t;
+ // FaB collector number: exactly three letters followed by three digits (for example GEM069).
+ const compact=norm(text), letterFix={'0':'O','1':'I','2':'Z','5':'S','6':'G','8':'B'}, digitFix={'O':'0','Q':'0','D':'0','I':'1','L':'1','Z':'2','S':'5','G':'6','B':'8'};
+ for(let i=0;i<=compact.length-6;i++){
+  const raw=compact.slice(i,i+6);
+  let candidate='';
+  for(let p=0;p<6;p++){const ch=raw[p];candidate+=p<3?(letterFix[ch]||ch):(digitFix[ch]||ch)}
+  if(/^[A-Z]{3}\d{3}$/.test(candidate)&&catalog[candidate])return candidate;
+ }
  return '';
 }
 function lookup(raw){const n=norm(raw);if(catalog[n]){openVerify(n);return true}openNotFound(raw);return false}
