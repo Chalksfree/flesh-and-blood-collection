@@ -1,0 +1,43 @@
+/* Compact phone verification sheet: camera stays visible while all answers remain together. */
+@media (max-width:700px){
+  .app{padding:6px;gap:6px}
+  .card-body{padding:7px}
+  .app>section:first-child .grid2{display:grid;grid-template-columns:1fr 92px;gap:6px}
+  .app>section:first-child .grid2>*{min-width:0}
+  .app>section:first-child .field span{font-size:11px}
+  .app>section:first-child .input{min-height:38px;padding:6px 8px}
+  .toolbar{gap:5px}
+  .toolbar .btn{min-height:38px;padding:6px 9px}
+  .toolbar .label{font-size:12px}
+  .toolbar .field{min-width:100%;display:none}
+  .camera-wrap{min-height:330px}
+  .camera-wrap video{height:52vh;min-height:330px}
+  .stats{display:grid;grid-template-columns:78px 86px 1fr;gap:5px}
+  .stat{min-width:0;padding:6px}
+  .stat-value{font-size:1.2rem}
+  .stats .actions{gap:4px;justify-content:flex-end}
+  .stats .actions .btn{min-height:36px;padding:5px 7px;font-size:11px}
+
+  #verifyModal{align-items:flex-end;justify-content:center;padding:0;background:linear-gradient(transparent 0 34%,rgba(0,0,0,.38) 34%)}
+  #verifyModal .modal-box{width:100%;max-height:61vh;border-radius:14px 14px 0 0;padding:8px 10px;overflow-y:auto}
+  #verifyModal h3{font-size:15px;margin:0}
+  #verifyModal h3+p{display:none}
+  #verifyModal #closeModal{min-height:32px;width:32px}
+  #verifyModal .match-card{margin-top:4px;padding:5px 8px;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+  #verifyModal .big-number{font-size:19px}
+  #verifyModal .match-card .font-semibold{font-size:13px;flex:1;min-width:120px}
+  #verifyModal .match-card .badge{min-height:20px;padding:2px 6px;font-size:10px}
+  #verifyModal .mt-4{margin-top:6px}
+  #verifyModal .mb-2{margin-bottom:3px;font-size:12px}
+  #verifyModal .choice-grid{display:flex;gap:5px;overflow-x:auto;padding:1px 1px 4px;scrollbar-width:thin}
+  #verifyModal .choice{flex:0 0 auto;min-height:35px;padding:5px 9px;font-size:12px}
+  #verifyModal #finalDetails{padding:5px 7px;font-size:12px}
+  #verifyModal #finalDetails .text-sm{font-size:10px}
+  #verifyModal #finalSection .grid2{display:grid;grid-template-columns:86px 1fr;gap:6px;margin-top:5px}
+  #verifyModal #finalSection .grid2>*{min-width:0}
+  #verifyModal .field{gap:2px;min-width:0}
+  #verifyModal .field span{font-size:10px}
+  #verifyModal .input{min-height:36px;padding:5px 7px}
+  #verifyModal .modal-action{position:sticky;bottom:-8px;background:#252821;margin:6px -2px -8px;padding:6px 2px 8px;display:grid;grid-template-columns:74px 1fr}
+  #verifyModal .modal-action .btn{min-height:38px;padding:6px 8px}
+}
