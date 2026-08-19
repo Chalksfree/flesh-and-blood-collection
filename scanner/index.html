@@ -6,7 +6,7 @@
   <title>FaB Webcam Card Scanner</title>
   <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-  <link rel="stylesheet" href="./styles.css" />
+  <link rel="stylesheet" href="./styles.css?v=20260818-2333" />
   <script src="./catalog.js"></script>
 </head>
 <body>
@@ -28,7 +28,7 @@
     <video id="video" autoplay playsinline muted></video>
     <canvas id="canvas" hidden></canvas>
     <div class="number-help">Hold only the printed card number close to the camera</div>
-    <div class="guide"><span>CARD NUMBER ONLY</span><small>Fill this area — example: GEM069</small></div><div id="scanline" class="scanline" hidden></div>
+    <div class="number-zone"><strong>GEM069</strong><span>Place the six-character number here</span></div><div id="scanline" class="scanline" hidden></div>
     <div class="status"><span id="cameraStatus" class="badge badge-neutral">Camera off</span><span id="ocrStatus" class="badge badge-neutral">Ready</span></div>
   </section>
 
