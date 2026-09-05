@@ -1,0 +1,11 @@
+{
+  "name":"Super Cal",
+  "short_name":"Super Cal",
+  "description":"A private local-first family calendar",
+  "start_url":"./",
+  "scope":"./",
+  "display":"standalone",
+  "background_color":"#f5f7fb",
+  "theme_color":"#28539a",
+  "icons":[{"src":"icon.svg?v=20260904","sizes":"any","type":"image/svg+xml","purpose":"any maskable"}]
+}
