@@ -22,7 +22,7 @@
     const interval=Math.max(1,Number(r.interval)||1), days=dayDiff(item.date,date), months=monthDiff(item.date,date), start=localDate(item.date), d=localDate(date);
     let yes=false;
     switch(r.frequency||'once'){
-      case 'once':yes=date===item.date;break;
+      case 'once':yes=date>=item.date&&date<=(validDate(item.endDate)?item.endDate:item.date);break;
       case 'daily':yes=days%interval===0;break;
       case 'weekdays': yes=(Math.floor(days/7)%interval===0)&&(r.weekdays||[]).map(Number).includes(weekday(date));break;
       case 'weekly':yes=days%7===0&&(Math.floor(days/7)%interval===0);break;
@@ -49,19 +49,19 @@
     const protectedChildItem=parent&&!sent;
     return {view:canView,create:canView,edit:canView&&(own||sent)&&!protectedChildItem,delete:canView&&(own||sent)&&!protectedChildItem};
   }
-  function itemText(item){return [item.title,item.description,item.notes,item.category,item.type,item.person,item.account,item.amount,item.relationship,item.date].filter(Boolean).join(' ').toLowerCase();}
+  function itemText(item){return [item.title,item.description,item.notes,item.category,item.type,item.person,item.account,item.amount,item.relationship,item.date,item.endDate].filter(Boolean).join(' ').toLowerCase();}
   function searchItems(items,q,filters={},profiles=[]){const term=(q||'').trim().toLowerCase();return items.filter(i=>{
     if(filters.includeDeleted?false:(i.deletedAt||i.archivedAt))return false;
     if(term&&!itemText(i).includes(term))return false;
     if(filters.type&&filters.type!=='all'&&i.type!==filters.type)return false;
     if(filters.status&&filters.status!=='all'&&((i.statusByDate&&Object.values(i.statusByDate).some(x=>x.status===filters.status))?false:i.status!==filters.status))return false;
     if(filters.profile&&filters.profile!=='all'&&i.ownerId!==filters.profile)return false;
-    if(filters.from&&i.date<filters.from)return false;if(filters.to&&i.date>filters.to)return false;return true;
+    if(filters.from&&(i.endDate||i.date)<filters.from)return false;if(filters.to&&i.date>filters.to)return false;return true;
   }).sort((a,b)=>a.date.localeCompare(b.date));}
   function validateSnapshot(x){
     if(!x||typeof x!=='object'||x.version!==1||!Array.isArray(x.items)||!Array.isArray(x.profiles)||!Array.isArray(x.history))return {ok:false,error:'Expected Super Cal backup version 1 with items, profiles, and history arrays.'};
     if(x.items.length>50000||x.history.length>250000)return {ok:false,error:'Backup exceeds safe record limits.'};
-    const ids=new Set();for(const i of x.items){if(!i||typeof i!=='object'||typeof i.id!=='string'||ids.has(i.id)||!TYPES.includes(i.type)||typeof i.title!=='string'||i.title.length>300||!validDate(i.date)||(['description','notes','category','person','account','amount'].some(k=>i[k]!==undefined&&typeof i[k]!=='string'))||(i.color!==undefined&&i.color!==''&&!/^#[0-9A-Fa-f]{6}$/.test(i.color)))return {ok:false,error:'An item is malformed, duplicated, or has an invalid date/type.'};ids.add(i.id);if(i.recurrence&&typeof i.recurrence!=='object')return {ok:false,error:'An item recurrence is malformed.'};}
+    const ids=new Set();for(const i of x.items){if(!i||typeof i!=='object'||typeof i.id!=='string'||ids.has(i.id)||!TYPES.includes(i.type)||typeof i.title!=='string'||i.title.length>300||!validDate(i.date)||(i.endDate!==undefined&&i.endDate!==''&&(!validDate(i.endDate)||i.endDate<i.date))||(['description','notes','category','person','account','amount'].some(k=>i[k]!==undefined&&typeof i[k]!=='string'))||(i.color!==undefined&&i.color!==''&&!/^#[0-9A-Fa-f]{6}$/.test(i.color)))return {ok:false,error:'An item is malformed, duplicated, or has an invalid date/type.'};ids.add(i.id);if(i.recurrence&&typeof i.recurrence!=='object')return {ok:false,error:'An item recurrence is malformed.'};}
     const p=new Set();for(const pr of x.profiles){if(!pr||typeof pr.id!=='string'||!pr.id||p.has(pr.id)||typeof pr.name!=='string')return {ok:false,error:'A profile is malformed.'};p.add(pr.id)}
     return {ok:true};
   }
